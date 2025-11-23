@@ -26,19 +26,62 @@ func (s *BaseController) Prepare() {
 	controllerName, actionName := s.GetControllerAndAction()
 	s.controllerName = strings.ToLower(controllerName[0 : len(controllerName)-10])
 	s.actionName = strings.ToLower(actionName)
+	
+	// SECURITY FIX: Enable CSRF protection for authenticated requests
+	// Skip CSRF for login/auth endpoints
+	if s.controllerName != "login" && s.controllerName != "auth" {
+		// Generate CSRF token if not exists
+		if s.GetSession("csrf_token") == nil && s.Ctx.Request.Method == "GET" {
+			token := s.GenerateCSRFToken()
+			s.Data["csrf_token"] = token
+		} else if s.Ctx.Request.Method != "GET" && s.Ctx.Request.Method != "HEAD" && s.Ctx.Request.Method != "OPTIONS" {
+			// Validate CSRF for state-changing requests
+			s.RequireCSRF()
+		}
+	}
 	// web api verify
-	// param 1 is md5(authKey+Current timestamp)
-	// param 2 is timestamp (It's limited to 20 seconds.)
+	// SECURITY FIX: Use nonce to prevent replay attacks completely
+	// param 1 is md5(authKey+timestamp+nonce)
+	// param 2 is timestamp
+	// param 3 is nonce (one-time token)
 	md5Key := s.getEscapeString("auth_key")
 	timestamp := s.GetIntNoErr("timestamp")
+	nonce := s.getEscapeString("nonce")
 	configKey := beego.AppConfig.String("auth_key")
-	timeNowUnix := time.Now().Unix()
-	if !(md5Key != "" && (math.Abs(float64(timeNowUnix-int64(timestamp))) <= 20) && (crypt.Md5(configKey+strconv.Itoa(timestamp)) == md5Key)) {
+	
+	// SECURITY FIX: Check session timeout (2 hours)
+	if s.GetSession("auth") == true {
+		if loginTime, ok := s.GetSession("loginTime").(int64); ok {
+			if time.Now().Unix()-loginTime > 7200 { // 2 hours
+				s.DestroySession()
+				s.Redirect(beego.AppConfig.String("web_base_url")+"/login/index", 302)
+				return
+			}
+		}
+	}
+	
+	// SECURITY FIX: Nonce-based replay attack prevention
+	// 时间窗口设为300秒（5分钟），但使用nonce确保每个请求只能用一次
+	authenticated := false
+	if md5Key != "" && nonce != "" && timestamp > 0 {
+		// 验证nonce（防止重放）
+		if common.ValidateNonce(nonce, int64(timestamp), 300) {
+			// 验证签名
+			expectedKey := crypt.Md5(configKey + strconv.Itoa(timestamp) + nonce)
+			if crypt.SecureCompare(md5Key, expectedKey) {
+				authenticated = true
+			}
+		}
+	}
+	
+	if !authenticated {
 		if s.GetSession("auth") != true {
 			s.Redirect(beego.AppConfig.String("web_base_url")+"/login/index", 302)
+			return
 		}
 	} else {
 		s.SetSession("isAdmin", true)
+		s.SetSession("loginTime", time.Now().Unix())
 		s.Data["isAdmin"] = true
 	}
 	if s.GetSession("isAdmin") != nil && !s.GetSession("isAdmin").(bool) {

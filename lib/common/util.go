@@ -49,7 +49,7 @@ func DomainCheck(domain string) bool {
 	return match
 }
 
-//Check if the Request request is validated
+//Check if the Request request is validated - Fixed: Use constant-time comparison
 func CheckAuth(r *http.Request, user, passwd string) bool {
 	s := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
 	if len(s) != 2 {
@@ -68,7 +68,11 @@ func CheckAuth(r *http.Request, user, passwd string) bool {
 	if len(pair) != 2 {
 		return false
 	}
-	return pair[0] == user && pair[1] == passwd
+	
+	// Use constant-time comparison to prevent timing attacks (SECURITY FIX)
+	userMatch := crypt.SecureCompare(pair[0], user)
+	passMatch := crypt.SecureCompare(pair[1], passwd)
+	return userMatch && passMatch
 }
 
 //get bool by str

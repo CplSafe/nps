@@ -5,13 +5,17 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/md5"
+	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"errors"
-	"math/rand"
+	mathrand "math/rand"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
-//en
+//en - Fixed: Use random IV instead of key as IV
 func AesEncrypt(origData, key []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -19,20 +23,35 @@ func AesEncrypt(origData, key []byte) ([]byte, error) {
 	}
 	blockSize := block.BlockSize()
 	origData = PKCS5Padding(origData, blockSize)
-	blockMode := cipher.NewCBCEncrypter(block, key[:blockSize])
-	crypted := make([]byte, len(origData))
-	blockMode.CryptBlocks(crypted, origData)
-	return crypted, nil
+	
+	// Generate random IV (SECURITY FIX)
+	ciphertext := make([]byte, blockSize+len(origData))
+	iv := ciphertext[:blockSize]
+	if _, err := rand.Read(iv); err != nil {
+		return nil, err
+	}
+	
+	blockMode := cipher.NewCBCEncrypter(block, iv)
+	blockMode.CryptBlocks(ciphertext[blockSize:], origData)
+	return ciphertext, nil
 }
 
-//de
+//de - Fixed: Extract IV from ciphertext
 func AesDecrypt(crypted, key []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
 	}
 	blockSize := block.BlockSize()
-	blockMode := cipher.NewCBCDecrypter(block, key[:blockSize])
+	
+	// Extract IV from ciphertext (SECURITY FIX)
+	if len(crypted) < blockSize {
+		return nil, errors.New("ciphertext too short")
+	}
+	iv := crypted[:blockSize]
+	crypted = crypted[blockSize:]
+	
+	blockMode := cipher.NewCBCDecrypter(block, iv)
 	origData := make([]byte, len(crypted))
 	blockMode.CryptBlocks(origData, crypted)
 	err, origData = PKCS5UnPadding(origData)
@@ -63,14 +82,42 @@ func Md5(s string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-//Generating Random Verification Key
+//Generating Random Verification Key - Fixed: Use crypto/rand
 func GetRandomString(l int) string {
-	str := "0123456789abcdefghijklmnopqrstuvwxyz"
+	str := "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	bytes := []byte(str)
-	result := []byte{}
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	result := make([]byte, l)
+	randomBytes := make([]byte, l)
+	
+	// Use crypto/rand for cryptographically secure random (SECURITY FIX)
+	if _, err := rand.Read(randomBytes); err != nil {
+		// Fallback to math/rand if crypto/rand fails
+		r := mathrand.New(mathrand.NewSource(time.Now().UnixNano()))
+		for i := 0; i < l; i++ {
+			result[i] = bytes[r.Intn(len(bytes))]
+		}
+		return string(result)
+	}
+	
 	for i := 0; i < l; i++ {
-		result = append(result, bytes[r.Intn(len(bytes))])
+		result[i] = bytes[int(randomBytes[i])%len(bytes)]
 	}
 	return string(result)
+}
+
+// HashPassword - Use bcrypt for secure password hashing (SECURITY FIX)
+func HashPassword(password string) (string, error) {
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	return string(bytes), err
+}
+
+// CheckPasswordHash - Verify bcrypt password hash (SECURITY FIX)
+func CheckPasswordHash(password, hash string) bool {
+	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+	return err == nil
+}
+
+// SecureCompare - Constant-time string comparison to prevent timing attacks (SECURITY FIX)
+func SecureCompare(a, b string) bool {
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }

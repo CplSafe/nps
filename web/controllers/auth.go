@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"time"
 
+	"ehang.io/nps/lib/common"
 	"ehang.io/nps/lib/crypt"
 	"github.com/astaxie/beego"
 )
@@ -34,9 +35,12 @@ func (s *AuthController) GetAuthKey() {
 	}
 }
 
+// GetTime 获取服务器时间和nonce（SECURITY FIX: 添加nonce支持）
 func (s *AuthController) GetTime() {
 	m := make(map[string]interface{})
 	m["time"] = time.Now().Unix()
+	// SECURITY FIX: 返回一次性nonce用于防重放攻击
+	m["nonce"] = common.GenerateNonce()
 	s.Data["json"] = m
 	s.ServeJSON()
 }

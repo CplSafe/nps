@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"html"
-	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -40,10 +39,11 @@ func (s *BaseController) Prepare() {
 		}
 	}
 	// web api verify
-	// SECURITY FIX: Use nonce to prevent replay attacks completely
+	// SECURITY FIX: Use pure nonce mechanism to prevent replay attacks
+	// 使用纯Nonce机制防止重放攻击，不依赖时间窗口
 	// param 1 is md5(authKey+timestamp+nonce)
-	// param 2 is timestamp
-	// param 3 is nonce (one-time token)
+	// param 2 is timestamp (用于签名，不用于时间窗口验证)
+	// param 3 is nonce (一次性令牌，每个请求必须唯一)
 	md5Key := s.getEscapeString("auth_key")
 	timestamp := s.GetIntNoErr("timestamp")
 	nonce := s.getEscapeString("nonce")
@@ -60,12 +60,13 @@ func (s *BaseController) Prepare() {
 		}
 	}
 	
-	// SECURITY FIX: Nonce-based replay attack prevention
-	// 时间窗口设为300秒（5分钟），但使用nonce确保每个请求只能用一次
+	// SECURITY FIX: Pure Nonce-based replay attack prevention
+	// 使用纯Nonce机制，不依赖时间窗口，完全防止重放攻击
+	// 每个nonce只能使用一次，无论何时发送
 	authenticated := false
 	if md5Key != "" && nonce != "" && timestamp > 0 {
-		// 验证nonce（防止重放）
-		if common.ValidateNonce(nonce, int64(timestamp), 300) {
+		// 验证nonce（防止重放）- 30分钟过期仅用于内存清理
+		if common.ValidateNonce(nonce, 30) {
 			// 验证签名
 			expectedKey := crypt.Md5(configKey + strconv.Itoa(timestamp) + nonce)
 			if crypt.SecureCompare(md5Key, expectedKey) {

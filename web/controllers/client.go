@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"ehang.io/nps/lib/common"
+	"ehang.io/nps/lib/crypt"
 	"ehang.io/nps/lib/file"
 	"ehang.io/nps/lib/rate"
 	"ehang.io/nps/server"

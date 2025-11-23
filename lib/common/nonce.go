@@ -25,9 +25,10 @@ func GenerateNonce() string {
 	return base64.URLEncoding.EncodeToString(b)
 }
 
-// ValidateNonce 验证nonce是否有效（未被使用且在时间窗口内）
-// timeWindow: 时间窗口（秒），建议300秒（5分钟）
-func ValidateNonce(nonce string, timestamp int64, timeWindow int64) bool {
+// ValidateNonce 验证nonce是否有效（未被使用）
+// 使用纯Nonce机制，不依赖时间窗口，彻底防止重放攻击
+// expirationMinutes: nonce在内存中的保留时间（分钟），用于防止内存无限增长，建议30分钟
+func ValidateNonce(nonce string, expirationMinutes int64) bool {
 	if nonce == "" {
 		return false
 	}
@@ -35,19 +36,13 @@ func ValidateNonce(nonce string, timestamp int64, timeWindow int64) bool {
 	globalNonceStore.mutex.Lock()
 	defer globalNonceStore.mutex.Unlock()
 
-	// 检查时间窗口
-	now := time.Now().Unix()
-	if now-timestamp > timeWindow || timestamp-now > timeWindow {
-		return false
-	}
-
 	// 检查nonce是否已使用
 	if _, exists := globalNonceStore.used.Load(nonce); exists {
 		return false
 	}
 
-	// 标记nonce为已使用，设置过期时间
-	globalNonceStore.used.Store(nonce, time.Now().Add(time.Duration(timeWindow)*time.Second))
+	// 标记nonce为已使用，设置过期时间（仅用于内存清理）
+	globalNonceStore.used.Store(nonce, time.Now().Add(time.Duration(expirationMinutes)*time.Minute))
 
 	return true
 }

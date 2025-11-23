@@ -5,8 +5,6 @@ import (
 	"encoding/base64"
 	"sync"
 	"time"
-
-	"github.com/astaxie/beego"
 )
 
 // CSRF Token Store

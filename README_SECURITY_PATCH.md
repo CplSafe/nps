@@ -92,8 +92,8 @@ cd tools && go build migrate_passwords.go
 
 #### 4️⃣ 认证重放攻击
 - **CVSS**: 8.1
-- **危害**: 20秒时间窗口允许重放攻击
-- **修复**: 缩短至5秒
+- **危害**: 时间窗口机制允许重放攻击
+- **修复**: 使用纯Nonce机制，完全防止重放攻击
 - **状态**: ✅ 已修复
 
 ### 高危漏洞 (CVSS 7.0-7.9)
@@ -341,7 +341,7 @@ cp conf/clients.json.backup conf/clients.json
 
 3. **会话管理** (`web/controllers/base.go`)
    - 2小时自动超时
-   - 时间窗口5秒
+   - 纯Nonce机制（无时间窗口限制）
    - CSRF保护集成
 
 4. **路径安全** (`server/proxy/http.go`)

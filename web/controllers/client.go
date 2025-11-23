@@ -43,6 +43,22 @@ func (s *ClientController) Add() {
 		s.SetInfo("add client")
 		s.display()
 	} else {
+		webPassword := s.getEscapeString("web_password")
+		
+		// SECURITY FIX: Hash password if provided
+		if webPassword != "" {
+			if len(webPassword) < 8 {
+				s.AjaxErr("password must be at least 8 characters")
+				return
+			}
+			hashedPassword, err := crypt.HashPassword(webPassword)
+			if err != nil {
+				s.AjaxErr("password hashing failed")
+				return
+			}
+			webPassword = hashedPassword
+		}
+		
 		t := &file.Client{
 			VerifyKey: s.getEscapeString("vkey"),
 			Id:        int(file.GetDb().JsonDb.GetClientId()),
@@ -58,7 +74,7 @@ func (s *ClientController) Add() {
 			RateLimit:       s.GetIntNoErr("rate_limit"),
 			MaxConn:         s.GetIntNoErr("max_conn"),
 			WebUserName:     s.getEscapeString("web_username"),
-			WebPassword:     s.getEscapeString("web_password"),
+			WebPassword:     webPassword,
 			MaxTunnelNum:    s.GetIntNoErr("max_tunnel"),
 			Flow: &file.Flow{
 				ExportFlow: 0,
@@ -131,7 +147,22 @@ func (s *ClientController) Edit() {
 			if s.GetSession("isAdmin").(bool) || (err == nil && b) {
 				c.WebUserName = s.getEscapeString("web_username")
 			}
-			c.WebPassword = s.getEscapeString("web_password")
+			
+			// SECURITY FIX: Hash password if changed
+			webPassword := s.getEscapeString("web_password")
+			if webPassword != "" {
+				if len(webPassword) < 8 {
+					s.AjaxErr("password must be at least 8 characters")
+					return
+				}
+				hashedPassword, err := crypt.HashPassword(webPassword)
+				if err != nil {
+					s.AjaxErr("password hashing failed")
+					return
+				}
+				c.WebPassword = hashedPassword
+			}
+			
 			c.ConfigConnAllow = s.GetBoolNoErr("config_conn_allow")
 			if c.Rate != nil {
 				c.Rate.Stop()

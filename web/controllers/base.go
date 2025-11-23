@@ -26,19 +26,47 @@ func (s *BaseController) Prepare() {
 	controllerName, actionName := s.GetControllerAndAction()
 	s.controllerName = strings.ToLower(controllerName[0 : len(controllerName)-10])
 	s.actionName = strings.ToLower(actionName)
+	
+	// SECURITY FIX: Enable CSRF protection for authenticated requests
+	// Skip CSRF for login/auth endpoints
+	if s.controllerName != "login" && s.controllerName != "auth" {
+		// Generate CSRF token if not exists
+		if s.GetSession("csrf_token") == nil && s.Ctx.Request.Method == "GET" {
+			token := s.GenerateCSRFToken()
+			s.Data["csrf_token"] = token
+		} else if s.Ctx.Request.Method != "GET" && s.Ctx.Request.Method != "HEAD" && s.Ctx.Request.Method != "OPTIONS" {
+			// Validate CSRF for state-changing requests
+			s.RequireCSRF()
+		}
+	}
 	// web api verify
 	// param 1 is md5(authKey+Current timestamp)
-	// param 2 is timestamp (It's limited to 20 seconds.)
+	// param 2 is timestamp (SECURITY FIX: reduced to 5 seconds from 20)
 	md5Key := s.getEscapeString("auth_key")
 	timestamp := s.GetIntNoErr("timestamp")
 	configKey := beego.AppConfig.String("auth_key")
 	timeNowUnix := time.Now().Unix()
-	if !(md5Key != "" && (math.Abs(float64(timeNowUnix-int64(timestamp))) <= 20) && (crypt.Md5(configKey+strconv.Itoa(timestamp)) == md5Key)) {
+	
+	// SECURITY FIX: Check session timeout (2 hours)
+	if s.GetSession("auth") == true {
+		if loginTime, ok := s.GetSession("loginTime").(int64); ok {
+			if time.Now().Unix()-loginTime > 7200 { // 2 hours
+				s.DestroySession()
+				s.Redirect(beego.AppConfig.String("web_base_url")+"/login/index", 302)
+				return
+			}
+		}
+	}
+	
+	// SECURITY FIX: Reduced time window from 20 to 5 seconds
+	if !(md5Key != "" && (math.Abs(float64(timeNowUnix-int64(timestamp))) <= 5) && (crypt.Md5(configKey+strconv.Itoa(timestamp)) == md5Key)) {
 		if s.GetSession("auth") != true {
 			s.Redirect(beego.AppConfig.String("web_base_url")+"/login/index", 302)
+			return
 		}
 	} else {
 		s.SetSession("isAdmin", true)
+		s.SetSession("loginTime", time.Now().Unix())
 		s.Data["isAdmin"] = true
 	}
 	if s.GetSession("isAdmin") != nil && !s.GetSession("isAdmin").(bool) {

@@ -189,7 +189,9 @@ reset:
 					}
 					c.Write(b)
 					host.Flow.Add(0, int64(len(b)))
-					s.cache.Add(filepath.Join(host.Host, r.URL.Path), b)
+					// SECURITY FIX: Sanitize path to prevent path traversal
+					safePath := sanitizePath(r.URL.Path)
+					s.cache.Add(host.Host+"/"+safePath, b)
 				} else {
 					lenConn := conn.NewLenConn(c)
 					if err := resp.Write(lenConn); err != nil {
@@ -205,7 +207,9 @@ reset:
 	for {
 		//if the cache start and the request is in the cache list, return the cache
 		if s.useCache {
-			if v, ok := s.cache.Get(filepath.Join(host.Host, r.URL.Path)); ok {
+			// SECURITY FIX: Sanitize path to prevent path traversal
+			safePath := sanitizePath(r.URL.Path)
+			if v, ok := s.cache.Get(host.Host + "/" + safePath); ok {
 				n, err := c.Write(v.([]byte))
 				if err != nil {
 					break
@@ -260,6 +264,23 @@ func resetReqMethod(method string) string {
 		return "POST"
 	}
 	return method
+}
+
+// sanitizePath - SECURITY FIX: Prevent path traversal attacks
+func sanitizePath(urlPath string) string {
+	// Remove any ".." to prevent directory traversal
+	parts := strings.Split(urlPath, "/")
+	safeParts := make([]string, 0, len(parts))
+	
+	for _, part := range parts {
+		// Skip empty parts, ".", and ".."
+		if part == "" || part == "." || part == ".." {
+			continue
+		}
+		safeParts = append(safeParts, part)
+	}
+	
+	return strings.Join(safeParts, "/")
 }
 
 func (s *httpServer) NewServer(port int, scheme string) *http.Server {

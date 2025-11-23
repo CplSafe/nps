@@ -40,12 +40,14 @@ func (s *BaseController) Prepare() {
 		}
 	}
 	// web api verify
-	// param 1 is md5(authKey+Current timestamp)
-	// param 2 is timestamp (SECURITY FIX: reduced to 5 seconds from 20)
+	// SECURITY FIX: Use nonce to prevent replay attacks completely
+	// param 1 is md5(authKey+timestamp+nonce)
+	// param 2 is timestamp
+	// param 3 is nonce (one-time token)
 	md5Key := s.getEscapeString("auth_key")
 	timestamp := s.GetIntNoErr("timestamp")
+	nonce := s.getEscapeString("nonce")
 	configKey := beego.AppConfig.String("auth_key")
-	timeNowUnix := time.Now().Unix()
 	
 	// SECURITY FIX: Check session timeout (2 hours)
 	if s.GetSession("auth") == true {
@@ -58,8 +60,21 @@ func (s *BaseController) Prepare() {
 		}
 	}
 	
-	// SECURITY FIX: Reduced time window from 20 to 5 seconds
-	if !(md5Key != "" && (math.Abs(float64(timeNowUnix-int64(timestamp))) <= 5) && (crypt.Md5(configKey+strconv.Itoa(timestamp)) == md5Key)) {
+	// SECURITY FIX: Nonce-based replay attack prevention
+	// 时间窗口设为300秒（5分钟），但使用nonce确保每个请求只能用一次
+	authenticated := false
+	if md5Key != "" && nonce != "" && timestamp > 0 {
+		// 验证nonce（防止重放）
+		if common.ValidateNonce(nonce, int64(timestamp), 300) {
+			// 验证签名
+			expectedKey := crypt.Md5(configKey + strconv.Itoa(timestamp) + nonce)
+			if crypt.SecureCompare(md5Key, expectedKey) {
+				authenticated = true
+			}
+		}
+	}
+	
+	if !authenticated {
 		if s.GetSession("auth") != true {
 			s.Redirect(beego.AppConfig.String("web_base_url")+"/login/index", 302)
 			return
